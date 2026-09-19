@@ -429,100 +429,93 @@ else {
 Write-Host ""
 
 
-# ============================================================================
-# STEP 2 - NPCAP
-# ============================================================================
+# ==========================================
+# Npcap Check / Installation
+# ==========================================
 
-Write-Host "  Step 2 / 3 : Npcap" -ForegroundColor White
-Write-HR
+Write-Host ""
+Write-Host "[*] Checking Npcap..." -ForegroundColor Cyan
 
+$npcapService = Get-Service -Name "npcap" -ErrorAction SilentlyContinue
 
-if (Test-NpcapInstalled) {
+if ($npcapService) {
 
-    Write-OK "Npcap is already installed."
+    Write-Host "[+] Npcap is already installed." -ForegroundColor Green
 
 }
 else {
 
-    Write-Err "Npcap NOT found."
+    Write-Host "[!] Npcap was not detected." -ForegroundColor Yellow
+    Write-Host "[*] Downloading Npcap installer..." -ForegroundColor Cyan
 
-    Write-Step "Downloading Npcap installer..."
-
-    $NpcapVersion = "1.79"
-
-    $NpcapUrl = "https://npcap.com/dist/npcap-$NpcapVersion.exe"
-
-    $NpcapPath = Join-Path $env:TEMP "npcap_installer.exe"
-
+    $npcapUrl = "https://npcap.com/dist/npcap-1.79.exe"
+    $npcapInstaller = Join-Path $env:TEMP "npcap-installer.exe"
 
     try {
 
-        Download-WithProgress `
-            -Url $NpcapUrl `
-            -Dest $NpcapPath
+        Invoke-WebRequest `
+            -Uri $npcapUrl `
+            -OutFile $npcapInstaller `
+            -UseBasicParsing
 
-
-        Write-Step "Installing Npcap silently..."
-
-        Write-Info "Loopback support : ENABLED"
-        Write-Info "WinPcap API mode : ENABLED"
-
-
-        $Process = Start-Process `
-            -FilePath $NpcapPath `
-            -ArgumentList "/S /loopback_support=yes /winpcap_mode=yes" `
-            -Wait `
-            -PassThru `
-            -ErrorAction Stop
-
-
-        if ($Process.ExitCode -eq 0) {
-
-            Write-OK "Npcap $NpcapVersion installed successfully."
-
-            Write-Info "Loopback support : ENABLED"
-            Write-Info "WinPcap API mode : ENABLED"
-
-        }
-        else {
-
-            Write-Err "Npcap installer exited with code $($Process.ExitCode)"
-
-            Write-Info "Manual download:"
-            Write-Info $NpcapUrl
-        }
+        Write-Host "[+] Npcap installer downloaded." -ForegroundColor Green
 
     }
     catch {
 
-        Write-Err "Npcap installation failed."
-        Write-Info $_.Exception.Message
+        Write-Host "[ERROR] Failed to download Npcap." -ForegroundColor Red
+        Write-Host $_.Exception.Message -ForegroundColor Red
+
+        exit 1
+    }
+
+    Write-Host ""
+    Write-Host "============================================" -ForegroundColor Yellow
+    Write-Host " Npcap installation required" -ForegroundColor Yellow
+    Write-Host "============================================" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Npcap is required for ICMP packet capture." -ForegroundColor White
+    Write-Host ""
+    Write-Host "The Npcap installer will now open." -ForegroundColor White
+    Write-Host "Please complete the installation normally." -ForegroundColor White
+    Write-Host ""
+    Write-Host "IMPORTANT:" -ForegroundColor Yellow
+    Write-Host "Enable loopback traffic support if the installer provides that option." -ForegroundColor Yellow
+    Write-Host ""
+
+    Read-Host "Press ENTER to start the Npcap installer"
+
+    # IMPORTANT:
+    # No /quiet
+    # No /S
+    # No silent installation
+    Start-Process `
+        -FilePath $npcapInstaller `
+        -Wait
+
+    Write-Host ""
+    Write-Host "[*] Npcap installer closed." -ForegroundColor Cyan
+    Write-Host "[*] Checking Npcap installation..." -ForegroundColor Cyan
+
+    Start-Sleep -Seconds 2
+
+    $npcapService = Get-Service -Name "npcap" -ErrorAction SilentlyContinue
+
+    if ($npcapService) {
+
+        Write-Host "[+] Npcap installed successfully." -ForegroundColor Green
+
+    }
+    else {
 
         Write-Host ""
-
-        Write-Host "  Install Npcap manually:" -ForegroundColor Yellow
-        Write-Host $NpcapUrl -ForegroundColor Cyan
-
+        Write-Host "[ERROR] Npcap was not detected after installation." -ForegroundColor Red
         Write-Host ""
-        Write-Host "  During installation enable:" -ForegroundColor Yellow
+        Write-Host "Please install Npcap and run the launcher again." -ForegroundColor Yellow
 
-        Write-Host "    [x] Support loopback traffic" -ForegroundColor Cyan
-        Write-Host "    [x] WinPcap API-compatible mode" -ForegroundColor Cyan
-
-        Write-Host ""
-
-        $Continue = Read-Host "  Continue anyway? (Y/N)"
-
-        if ($Continue -notmatch "^[Yy]$") {
-
-            Exit 1
-        }
+        exit 1
     }
 }
-
-
-Write-Host ""
-
 
 # ============================================================================
 # STEP 3 - SCAPY
