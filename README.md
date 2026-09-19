@@ -1,20 +1,24 @@
-# 🚀 ICMP Tunnel Lab
+## 🚀 Quick Start
 
-> A Windows-based security laboratory for understanding **ICMP Tunneling**, simulated data exfiltration, packet-level communication, and defensive network traffic analysis with **Wireshark**.
+On Windows, you can download the latest version of the lab, extract it to your Desktop, and launch it automatically with a single PowerShell command:
 
-[![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows)](https://github.com/mohammad-darvish-pixel/ICMP-Tunnel-Lab)
-[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python\&logoColor=white)](https://www.python.org/)
-[![Scapy](https://img.shields.io/badge/Scapy-Packet%20Crafting-red)](https://scapy.net/)
-[![Wireshark](https://img.shields.io/badge/Wireshark-Network%20Analysis-1679A7?logo=wireshark\&logoColor=white)](https://www.wireshark.org/)
-[![License](https://img.shields.io/badge/Use-Authorized%20Lab%20Only-orange)](#-security-notice)
+```powershell
+$u="https://github.com/mohammad-darvish-pixel/ICMP-Tunnel-Lab/archive/refs/heads/main.zip";$d="$env:USERPROFILE\Desktop\icmp-tunnel-lab";Remove-Item $d -Recurse -Force -ErrorAction SilentlyContinue;New-Item $d -ItemType Directory -Force|Out-Null;Invoke-WebRequest $u -OutFile "$d\lab.zip";Expand-Archive "$d\lab.zip" $d -Force;Remove-Item "$d\lab.zip" -Force;$p=Get-ChildItem $d -Directory|Select-Object -First 1;Set-Location $p.FullName;& powershell -ExecutionPolicy Bypass -File ".\launcher.ps1"
+```
 
----
+### What this command does
 
-## ⚡ One-Command Setup
+1. Downloads the latest `main` branch from GitHub.
+2. Creates `icmp-tunnel-lab` on the user's Desktop.
+3. Extracts the project files.
+4. Removes the downloaded ZIP archive.
+5. Enters the extracted project directory.
+6. Launches `launcher.ps1` automatically.
 
-> **Run PowerShell as Administrator before executing the command below.**
+> **Windows / PowerShell only**
 
-```$u="https://github.com/mohammad-darvish-pixel/ICMP-Tunnel-Lab/archive/refs/heads/main.zip";$d="$env:USERPROFILE\Desktop\icmp-tunnel-lab";Remove-Item $d -Recurse -Force -ErrorAction SilentlyContinue;New-Item $d -ItemType Directory -Force|Out-Null;Invoke-WebRequest $u -OutFile "$d\lab.zip";Expand-Archive "$d\lab.zip" $d -Force;Remove-Item "$d\lab.zip" -Force;$p=Get-ChildItem $d -Directory|Select-Object -First 1;Set-Location $p.FullName;& powershell -ExecutionPolicy Bypass -File ".\launcher.ps1"```
+After running the command, the lab launcher will handle the remaining setup and configuration.
+
 
 ### ⚠️ Security Warning
 
