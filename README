@@ -1,620 +1,220 @@
 # ICMP Tunnel Lab
 
-A self-contained Windows laboratory for experimenting with **ICMP Tunneling**, simulated data exfiltration, and network traffic analysis with Wireshark.
+A Windows-based security laboratory for understanding **ICMP Tunneling**, simulated data exfiltration, packet-level communication, and defensive network traffic analysis with Wireshark.
 
-This project is designed to demonstrate how data can be transported through ICMP packets and how this type of traffic can be observed and investigated from a defensive / network-monitoring perspective.
+This project demonstrates how arbitrary test data can be encoded, divided into chunks, transported inside **ICMP Echo Request** packets, and reconstructed by a receiver.
 
-> ⚠️ **For authorized laboratory and educational environments only.**
+The laboratory is intentionally designed for **controlled and authorized environments** and uses synthetic test data.
+
+> ⚠️ **For authorized security research and laboratory use only.**
 >
-> Run this project only on systems and networks that you own or have explicit permission to test.
+> Do not use this project to transfer real confidential information, bypass security controls, or access systems without authorization.
 
 ---
 
 ## Overview
 
-ICMP is normally used for network diagnostics.
+ICMP is primarily used for network diagnostics.
 
-The most familiar example is `ping`, where a host sends an ICMP Echo Request and receives an ICMP Echo Reply.
+The most familiar example is `ping`, where a host sends an **ICMP Echo Request** and receives an **ICMP Echo Reply**.
 
-However, ICMP can also be abused as a communication channel.
+However, the payload of an ICMP packet can also carry additional data.
 
-Instead of using ICMP only for diagnostic information, an attacker can place additional data inside ICMP packets and use them to transport information between two systems.
+This makes ICMP interesting from both an offensive-security and defensive-monitoring perspective.
 
-This technique is commonly referred to as **ICMP Tunneling**.
+An ICMP tunnel can use this capability to transport information through ICMP packets instead of using a conventional TCP or UDP communication channel.
 
-A simplified representation is:
+This laboratory provides a simplified implementation of that concept.
 
 ```text
-+------------------+
-| Application Data |
-+------------------+
-         |
-         v
-+------------------+
-| Tunnel / Encoder |
-+------------------+
-         |
-         v
-+------------------+
-| ICMP Packet      |
-|                  |
-| Header + Payload |
-+------------------+
-         |
-         | Network
-         v
-+------------------+
-| ICMP Receiver    |
-+------------------+
-         |
-         v
-+------------------+
-| Reconstructed    |
-| Data             |
-+------------------+
+              Test File
+                  |
+                  v
+          Base64 Encoding
+                  |
+                  v
+          Split into Chunks
+                  |
+                  v
+       ICMP Echo Request Packets
+                  |
+                  |  Network / Loopback
+                  v
+             Receiver
+                  |
+                  v
+        Collect ICMP Chunks
+                  |
+                  v
+          Reconstruct Data
+                  |
+                  v
+          received/recv_*.*
 ```
-
-The important point is that the network may see what appears to be ordinary ICMP traffic while additional information is being transported inside the packets.
 
 ---
 
-# What is ICMP Tunneling?
+# What Is ICMP Tunneling?
 
-ICMP tunneling is a technique where ICMP packets are used as a transport mechanism for data that would normally use another protocol.
+ICMP tunneling is a technique in which ICMP packets are used as a transport mechanism for data that would normally be transferred using another protocol.
+
+A normal application communication may look like:
+
+```text
+Application
+     |
+     v
+ TCP / UDP
+     |
+     v
+ Network
+```
+
+An ICMP-based communication can instead look like:
+
+```text
+Application Data
+      |
+      v
+ ICMP Tunnel
+      |
+      v
+ ICMP Echo Requests
+      |
+      v
+    Network
+```
+
+The important difference is not the IP protocol itself, but **how the ICMP packets are being used**.
+
+In this laboratory, application data is placed inside the payload of ICMP Echo Requests.
+
+---
+
+# How This Laboratory Works
+
+The project contains two primary Python components:
+
+```text
+              +----------------+
+              |    sender.py   |
+              +-------+--------+
+                      |
+                      | ICMP Echo Requests
+                      |
+                      v
+              +----------------+
+              |  Receiver.py   |
+              +-------+--------+
+                      |
+                      v
+                 received/
+```
+
+## Sender
+
+`sender.py` is responsible for:
+
+1. Reading the selected test file.
+2. Base64-encoding the file.
+3. Splitting the encoded data into small chunks.
+4. Creating ICMP Echo Request packets.
+5. Adding a laboratory-specific identifier.
+6. Sending the packets to the target IP.
+7. Waiting briefly between packets.
+
+The current implementation uses:
+
+```text
+CHUNK_SIZE = 32
+INTER_PKT  = 0.15 seconds
+TTL        = 64
+ICMP ID    = 0x4C42
+```
+
+The sender uses the following logical payload format:
+
+```text
+ICMTUN:<session_id>:<sequence>:<total>:<filename>:<base64_chunk>
+```
+
+This gives the receiver enough information to associate packets with a transfer and reconstruct the original data.
+
+---
+
+# Receiver
+
+`Receiver.py` listens for ICMP traffic using Scapy.
+
+It specifically looks for:
+
+```text
+ICMP Echo Request
+        +
+ICMP Identifier = 0x4C42
+        +
+Payload beginning with ICMTUN
+```
+
+The receiver extracts:
+
+```text
+Session ID
+Sequence Number
+Total Chunks
+Filename
+Base64 Data
+```
+
+The chunks are then stored in memory until the complete transfer has been received.
+
+After all chunks arrive, the receiver:
+
+1. Orders the chunks.
+2. Combines the Base64 data.
+3. Decodes the data.
+4. Creates the `received` directory if necessary.
+5. Writes the reconstructed file to disk.
+
+The resulting file is saved using the following format:
+
+```text
+received/recv_<filename>
+```
 
 For example:
 
 ```text
-Normal:
-
-Application
-    |
-    v
- TCP / UDP
-    |
-    v
- Network
+received/recv_secret.txt
 ```
 
-Compared with:
+The receiver also displays useful information such as:
 
 ```text
-ICMP Tunnel:
-
-Application Data
-       |
-       v
- ICMP Tunnel
-       |
-       v
- ICMP Packets
-       |
-       v
- Network
+Session ID
+Source IP
+Filename
+Total packets
+Transfer duration
+Received file size
+File preview
 ```
 
-The tunnel can use fields such as the ICMP payload to carry information.
-
-Because ICMP is commonly permitted in many environments for troubleshooting and monitoring, unusual ICMP traffic can sometimes blend into normal network activity.
+These details make the laboratory useful for demonstrating how a defender could observe and investigate an ICMP-based transfer.
 
 ---
 
-# Simulated Exfiltration
+# Simulated Data Exfiltration
 
-One of the scenarios represented by this laboratory is a simplified data-exfiltration workflow.
+The laboratory models a simplified data-exfiltration scenario.
 
-A synthetic file such as:
+For example:
 
 ```text
 secret.txt
 ```
 
-can be divided into smaller chunks.
-
-Conceptually:
-
-```text
-secret.txt
-    |
-    v
-+---------+
-| Chunk 1 |
-+---------+
-| Chunk 2 |
-+---------+
-| Chunk 3 |
-+---------+
-| Chunk 4 |
-+---------+
-    |
-    v
-ICMP Packets
-    |
-    v
-Receiver
-    |
-    v
-Reassembled Data
-```
-
-The purpose of this laboratory is not to use real sensitive information.
-
-The data used by the Lab should be synthetic and created specifically for testing.
-
----
-
-# Why ICMP?
-
-ICMP is interesting from a network-monitoring perspective because it is not normally associated with arbitrary application data.
-
-A typical ICMP Echo Request may look conceptually like:
-
-```text
-Ethernet
-   |
-   +-- IPv4
-        |
-        +-- ICMP
-             |
-             +-- Identifier
-             +-- Sequence
-             +-- Payload
-```
-
-The payload is therefore an interesting area to inspect during traffic analysis.
-
-A large amount of structured or unusual information inside ICMP packets can be an indicator worth investigating.
-
----
-
-# Laboratory Architecture
-
-The project consists of two main components:
-
-```text
-                    Windows Host
-                         |
-              +----------+----------+
-              |                     |
-              v                     v
-          Sender.py             Wireshark
-              |
-              |
-          ICMP Traffic
-              |
-              v
-         Receiver.py
-```
-
-### Sender
-
-The sender is responsible for generating the ICMP traffic and transporting the test data.
-
-### Receiver
-
-The receiver listens for the ICMP traffic and processes the received data.
-
-### Wireshark
-
-Wireshark is used to capture and inspect the packets generated by the laboratory.
-
----
-
-# Windows Launcher
-
-The project includes:
-
-```text
-launcher.ps1
-```
-
-The launcher automates the local setup.
-
-It performs the following checks:
-
-1. Requests Administrator privileges.
-2. Detects Python.
-3. Checks for Npcap.
-4. Installs Npcap if necessary.
-5. Checks for Scapy.
-6. Installs Scapy if necessary.
-7. Verifies the required Python files.
-8. Opens the Receiver.
-9. Opens the Sender.
-
-The goal is to minimize manual configuration.
-
----
-
-# Requirements
-
-## Operating System
-
-Windows 10 / Windows 11
-
-## Required Software
-
-The launcher can automatically handle most dependencies.
-
-The laboratory uses:
-
-* Python 3.11+
-* Scapy
-* Npcap
-* Wireshark
-
-Administrator privileges are required because raw packet operations and packet capture require elevated privileges on Windows.
-
----
-
-# Installation
-
-Clone the repository:
-
-```powershell
-git clone https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
-```
-
-Enter the directory:
-
-```powershell
-cd YOUR_REPOSITORY
-```
-
-Then start the laboratory as Administrator:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\launcher.ps1
-```
-
-Alternatively, if the repository contains the provided batch launcher:
-
-```text
-start_lab.bat
-```
-
-run it with:
-
-**Right-click → Run as administrator**
-
----
-
-# One-Command Setup
-
-If you already trust the repository and want a minimal-interaction setup, PowerShell can download the repository, extract it, and start the launcher.
-
-Run **PowerShell as Administrator** and replace the repository URL:
-
-```powershell
-$u="https://github.com/YOUR_USERNAME/YOUR_REPOSITORY/archive/refs/heads/main.zip";$d="$env:TEMP\icmp-tunnel-lab";Remove-Item $d -Recurse -Force -ErrorAction SilentlyContinue;New-Item -ItemType Directory $d|Out-Null;Invoke-WebRequest $u -OutFile "$d\lab.zip";Expand-Archive "$d\lab.zip" $d -Force;$p=Get-ChildItem $d -Directory|Select-Object -First 1;Set-Location $p.FullName;powershell -ExecutionPolicy Bypass -File .\launcher.ps1
-```
-
-### Important
-
-This command downloads code from GitHub and executes it with Administrator privileges.
-
-Only use it with a repository you trust and have inspected.
-
-For a public project, it is strongly recommended to review the repository before executing the one-line installer.
-
----
-
-# Running the Lab
-
-After launching:
-
-```text
-+-----------------------------------------------+
-|             ICMP Tunnel Lab                   |
-+-----------------------------------------------+
-
-        |
-        +---- Receiver
-        |
-        +---- Sender
-```
-
-The launcher opens two PowerShell windows.
-
-### Receiver
-
-The Receiver waits for incoming ICMP traffic.
-
-### Sender
-
-The Sender generates the test traffic.
-
-The default laboratory configuration uses:
-
-```text
-Target IP: 127.0.0.1
-```
-
-when both components are running on the same Windows machine.
-
----
-
-# Wireshark Analysis
-
-Open Wireshark and select:
-
-```text
-Npcap Loopback Adapter
-```
-
-Because the default scenario runs locally, the loopback adapter is important.
-
-A basic ICMP filter:
-
-```text
-icmp
-```
-
-can be used to display ICMP packets.
-
-The laboratory also provides a more specific filter:
-
-```text
-icmp[4:2] == 0x4c42
-```
-
-This can be used to isolate the traffic generated by the laboratory implementation.
-
----
-
-# What to Look For
-
-When analyzing the traffic, examine:
-
-### 1. ICMP Type
-
-Common ICMP Echo traffic includes:
-
-```text
-Echo Request
-Echo Reply
-```
-
-Look for repeated ICMP traffic and determine whether it behaves like normal diagnostic traffic.
-
----
-
-### 2. Packet Frequency
-
-Normal troubleshooting traffic may consist of occasional Echo Requests.
-
-A tunnel may generate a significantly more regular stream of packets.
-
-Look at:
-
-```text
-Packet
-Packet
-Packet
-Packet
-Packet
-...
-```
-
-and examine the time between packets.
-
----
-
-### 3. Payload Size
-
-Compare the payload sizes of normal ICMP traffic with the traffic generated by the laboratory.
-
-Unusual or consistently structured payload sizes can be useful during investigation.
-
----
-
-### 4. Payload Contents
-
-Inspect the ICMP payload.
-
-The important question is:
-
-> Does the payload look like normal diagnostic data, or does it contain structured application information?
-
----
-
-### 5. Sequence and Identifier Fields
-
-Look at:
-
-```text
-Identifier
-Sequence Number
-```
-
-and determine whether the values follow an expected pattern.
-
----
-
-### 6. Repetition
-
-Look for:
-
-* Repeated destinations
-* Repeated packet sizes
-* Regular intervals
-* High ICMP volume
-* Similar payload structures
-* Long-lived ICMP communication
-
-No single characteristic proves that ICMP tunneling is occurring.
-
-Multiple indicators should be considered together.
-
----
-
-# ICMP Tunneling vs Normal Ping
-
-A normal Ping might look conceptually like:
-
-```text
-Host
- |
- | ICMP Echo Request
- |-------------------->
- |
- | ICMP Echo Reply
- |<--------------------
- |
-Host
-```
-
-An ICMP tunnel can instead look like:
-
-```text
-Host
- |
- | ICMP + DATA
- |-------------------->
- |
- | ICMP + DATA
- |-------------------->
- |
- | ICMP + DATA
- |-------------------->
- |
- | ICMP + DATA
- |-------------------->
- |
-Receiver
-```
-
-The protocol is still ICMP.
-
-The difference is how the ICMP traffic is being used.
-
----
-
-# Defensive Detection Perspective
-
-From a defensive perspective, ICMP tunneling can be investigated by establishing a baseline for normal ICMP traffic and looking for deviations.
-
-Potential indicators include:
-
-```text
-Unexpected ICMP volume
-        +
-Unusual payload sizes
-        +
-Repeated communication
-        +
-Long-lived sessions
-        +
-Unexpected destinations
-        +
-Structured payload data
-```
-
-These indicators should not automatically be treated as malicious.
-
-For example, legitimate monitoring systems, network-management tools, and diagnostic applications can also generate unusual ICMP traffic.
-
-The goal is to identify traffic that deserves investigation.
-
----
-
-# Suggested Wireshark Filters
-
-Display all ICMP:
-
-```text
-icmp
-```
-
-Echo Requests:
-
-```text
-icmp.type == 8
-```
-
-Echo Replies:
-
-```text
-icmp.type == 0
-```
-
-Laboratory traffic:
-
-```text
-icmp[4:2] == 0x4c42
-```
-
-You can combine filters when investigating specific packet characteristics.
-
----
-
-# Laboratory Flow
-
-The complete workflow is:
-
-```text
-                    START
-                      |
-                      v
-              launcher.ps1
-                      |
-                      v
-             Check Administrator
-                      |
-                      v
-              Check Python
-                      |
-                      v
-               Check Npcap
-                      |
-                      v
-               Check Scapy
-                      |
-                      v
-              Start Receiver
-                      |
-                      v
-               Start Sender
-                      |
-                      v
-             Generate ICMP
-                      |
-                      v
-                Wireshark
-                      |
-                      v
-              Analyze Traffic
-```
-
----
-
-# Project Structure
-
-```text
-.
-├── launcher.ps1
-├── start_lab.bat
-├── sender.py
-├── receiver.py
-├── secret.txt
-└── README.md
-```
-
----
-
-# Security Notice
-
-This project is intentionally designed for controlled laboratory environments.
-
-Do not use it to:
-
-* Exfiltrate real confidential information
-* Bypass network security controls
-* Access systems without authorization
-* Establish unauthorized tunnels
-* Transfer credentials or sensitive files
-
-Use synthetic data such as:
+can contain synthetic training data such as:
 
 ```text
 LAB_SECRET
@@ -622,29 +222,968 @@ TRAINING_DATA
 TEST_FILE
 ```
 
-when experimenting with the laboratory.
+The sender reads the file and converts it into Base64:
+
+```text
+File
+ |
+ v
+Base64
+ |
+ v
+Chunk 1
+Chunk 2
+Chunk 3
+Chunk 4
+ |
+ v
+ICMP Packets
+```
+
+The receiver performs the reverse process:
+
+```text
+ICMP Packets
+     |
+     v
+Extract Chunks
+     |
+     v
+Reassemble Base64
+     |
+     v
+Base64 Decode
+     |
+     v
+Original File
+```
+
+This is a **simulation** of data exfiltration and should be performed only with files specifically created for the laboratory.
+
+---
+
+# Packet Structure
+
+The generated packets contain several useful fields for analysis.
+
+Conceptually:
+
+```text
+Ethernet
+   |
+   +-- IPv4
+        |
+        +-- ICMP Echo Request
+             |
+             +-- Identifier
+             |     0x4C42
+             |
+             +-- Sequence Number
+             |
+             +-- Payload
+                   |
+                   +-- ICMTUN
+                   +-- Session ID
+                   +-- Sequence
+                   +-- Total
+                   +-- Filename
+                   +-- Base64 Chunk
+```
+
+The laboratory uses:
+
+```text
+ICMTUN
+```
+
+as a magic header and:
+
+```text
+0x4C42
+```
+
+as the ICMP identifier.
+
+These values make it easier to isolate the laboratory traffic in Wireshark.
+
+---
+
+# Laboratory Architecture
+
+The default configuration is designed to run both components on the same Windows system.
+
+```text
+                       Windows Host
+                            |
+             +--------------+--------------+
+             |                             |
+             v                             v
+        sender.py                       Wireshark
+             |
+             |
+       ICMP Echo Requests
+             |
+             v
+        Receiver.py
+             |
+             v
+        received/
+```
+
+The default target is:
+
+```text
+127.0.0.1
+```
+
+This allows the laboratory to be demonstrated locally without requiring a second machine.
+
+---
+
+# Windows Environment
+
+The project is designed primarily for:
+
+```text
+Windows 10
+Windows 11
+```
+
+The laboratory uses:
+
+* Python 3.x
+* Scapy
+* Npcap
+* Wireshark
+
+Administrator privileges are required because packet capture and raw packet operations on Windows may require elevated privileges.
+
+The receiver also attempts to identify the Npcap loopback interface automatically.
+
+---
+
+# Automatic Launcher
+
+The repository includes:
+
+```text
+launcher.ps1
+```
+
+The PowerShell launcher automates the laboratory setup.
+
+It performs checks for:
+
+```text
+Administrator privileges
+        |
+        v
+Python
+        |
+        v
+Npcap
+        |
+        v
+Scapy
+        |
+        v
+Required Lab Files
+        |
+        v
+Receiver
+        |
+        v
+Sender
+```
+
+The launcher can detect Python installations using common commands such as:
+
+```text
+python
+py
+python3
+```
+
+It also checks whether Npcap and Scapy are available before starting the laboratory.
+
+---
+
+# Starting the Laboratory
+
+Clone the repository:
+
+```powershell
+git clone https://github.com/mohammad-darvish-pixel/ICMP-Tunnel-Lab.git
+```
+
+Enter the directory:
+
+```powershell
+cd ICMP-Tunnel-Lab
+```
+
+Then run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\launcher.ps1
+```
+
+You can also use the included:
+
+```text
+start_lab.bat
+```
+
+The batch launcher starts `launcher.ps1` with an execution-policy bypass. If UAC blocks the process, run the batch file as Administrator.
+
+---
+
+# Running Manually
+
+If you do not want to use the launcher, the components can be started manually.
+
+Start the receiver:
+
+```powershell
+python Receiver.py
+```
+
+Then start the sender:
+
+```powershell
+python sender.py
+```
+
+The sender will ask for:
+
+```text
+Target IP
+File to exfiltrate
+```
+
+The default values are:
+
+```text
+Target IP:
+127.0.0.1
+
+File:
+secret.txt
+```
+
+The sender also accepts command-line arguments:
+
+```powershell
+python sender.py 127.0.0.1 secret.txt
+```
+
+The sender implementation uses Scapy to construct the ICMP packets and sends them sequentially with a short delay between packets.
+
+---
+
+# Wireshark Setup
+
+For the default local configuration, capture traffic using the Npcap loopback interface.
+
+Depending on the installed Npcap version, the interface may appear as:
+
+```text
+Adapter for loopback traffic capture
+```
+
+The receiver also reports the detected loopback interface when it starts.
+
+Start Wireshark before running the sender so the generated traffic can be captured.
+
+---
+
+# Wireshark Filters
+
+## Display ICMP
+
+```text
+icmp
+```
+
+---
+
+## Display Echo Requests
+
+```text
+icmp.type == 8
+```
+
+---
+
+## Display Echo Replies
+
+```text
+icmp.type == 0
+```
+
+---
+
+## Identify Laboratory Traffic
+
+The laboratory uses:
+
+```text
+0x4C42
+```
+
+as its ICMP identifier.
+
+Use:
+
+```text
+icmp[4:2] == 0x4c42
+```
+
+to isolate packets generated by the laboratory.
+
+---
+
+## Search for the Laboratory Header
+
+You can also search packet contents for:
+
+```text
+ICMTUN
+```
+
+For example:
+
+```text
+frame contains "ICMTUN"
+```
+
+These filters are also displayed by the sender and receiver when they start.
+
+---
+
+# What to Analyze in Wireshark
+
+The main purpose of the laboratory is not simply to generate packets.
+
+The interesting part is understanding **what makes the traffic suspicious**.
+
+During the analysis, investigate several characteristics together.
+
+---
+
+## 1. ICMP Type
+
+The laboratory primarily generates:
+
+```text
+ICMP Echo Request
+```
+
+Normal ping traffic also uses Echo Requests, so the ICMP type alone is not enough to identify tunneling.
+
+---
+
+## 2. ICMP Identifier
+
+Inspect:
+
+```text
+Identifier
+```
+
+The laboratory uses:
+
+```text
+0x4C42
+```
+
+This provides an easy way to identify the generated traffic.
+
+In a real investigation, an unusual or consistently reused identifier may become one of several useful indicators.
+
+---
+
+## 3. Sequence Number
+
+The sender increments the ICMP sequence number for each chunk:
+
+```text
+0
+1
+2
+3
+4
+...
+```
+
+This makes it possible to observe the relationship between packet order and transferred data.
+
+---
+
+## 4. Payload Size
+
+Look at the payload length of the ICMP packets.
+
+The laboratory intentionally uses small chunks:
+
+```text
+32 bytes
+```
+
+This creates a recognizable packet pattern and makes the traffic easier to study.
+
+In real environments, repeated or unusual payload sizes can be one indicator worth investigating.
+
+---
+
+## 5. Payload Contents
+
+Inspect the ICMP payload.
+
+Instead of ordinary ping data, the laboratory payload contains structured information:
+
+```text
+ICMTUN:<session>:<seq>:<total>:<filename>:<data>
+```
+
+This is one of the strongest clues within this controlled laboratory.
+
+---
+
+## 6. Packet Frequency
+
+The sender intentionally sends packets with approximately:
+
+```text
+150 ms
+```
+
+between packets.
+
+Therefore, Wireshark can reveal a regular stream such as:
+
+```text
+Packet
+  |
+  +-- 150 ms
+  |
+Packet
+  |
+  +-- 150 ms
+  |
+Packet
+  |
+  +-- 150 ms
+  |
+Packet
+```
+
+Regular periodic ICMP traffic can be worth investigating, especially when combined with unusual payload characteristics.
+
+---
+
+## 7. Communication Duration
+
+Instead of a single ping, an ICMP tunnel may generate a sequence of packets over a longer period.
+
+Look at:
+
+```text
+First packet
+      |
+      v
+Repeated ICMP traffic
+      |
+      v
+Last packet
+```
+
+Duration alone does not prove tunneling, but it can contribute to the overall investigation.
+
+---
+
+# ICMP Tunnel vs Normal Ping
+
+A normal ping might look like:
+
+```text
+Host A
+   |
+   | ICMP Echo Request
+   |-------------------->
+   |
+   | ICMP Echo Reply
+   |<--------------------
+   |
+Host B
+```
+
+The laboratory instead generates:
+
+```text
+Sender
+   |
+   | ICMP + structured data
+   |------------------------>
+   |
+   | ICMP + structured data
+   |------------------------>
+   |
+   | ICMP + structured data
+   |------------------------>
+   |
+   | ICMP + structured data
+   |------------------------>
+   |
+Receiver
+```
+
+The protocol remains ICMP.
+
+The important difference is **what is being transported inside the packets**.
+
+---
+
+# Defensive Detection Perspective
+
+From a blue-team perspective, ICMP tunneling should not be detected using a single rule.
+
+A more useful approach is to combine multiple observations.
+
+Potential indicators include:
+
+```text
+Unexpected ICMP volume
+        +
+Repeated ICMP communication
+        +
+Regular packet intervals
+        +
+Unusual payload sizes
+        +
+Structured payload contents
+        +
+Unexpected destinations
+        +
+Long-lived ICMP communication
+        +
+Unusual Identifier / Sequence patterns
+```
+
+None of these indicators independently proves malicious activity.
+
+Legitimate applications can also generate unusual ICMP traffic.
+
+The goal is to establish a baseline and investigate traffic that deviates from expected behavior.
+
+---
+
+# Why This Technique Can Be Interesting to Attackers
+
+ICMP is often treated differently from application protocols because it does not use TCP or UDP ports.
+
+In some environments, ICMP is allowed for:
+
+* Troubleshooting
+* Monitoring
+* Network diagnostics
+* Availability testing
+
+This can make unexpected ICMP communication interesting from a security perspective.
+
+An attacker could potentially attempt to abuse that allowed traffic to transport information.
+
+The laboratory demonstrates the underlying concept without requiring a real-world target or real sensitive information.
+
+---
+
+# Detection Opportunities
+
+A defender can approach this type of traffic from several layers.
+
+### Network Layer
+
+Investigate:
+
+```text
+Source IP
+Destination IP
+ICMP volume
+Packet frequency
+Packet size
+```
+
+### Protocol Layer
+
+Investigate:
+
+```text
+ICMP Type
+Identifier
+Sequence Number
+Payload
+```
+
+### Content Layer
+
+Look for:
+
+```text
+Structured strings
+Encoded data
+Repeated headers
+Unexpected file names
+Base64-like content
+```
+
+### Behavioral Layer
+
+Look for:
+
+```text
+Long-lived communication
+Periodic transmissions
+Unexpected destinations
+Large numbers of Echo Requests
+```
+
+Combining these observations provides much stronger context than simply alerting on `icmp`.
+
+---
+
+# Example Investigation Workflow
+
+A simple defensive workflow can look like:
+
+```text
+             ICMP Traffic
+                  |
+                  v
+          Establish Baseline
+                  |
+                  v
+        Identify Anomalies
+                  |
+                  v
+        Inspect Packet Fields
+                  |
+                  v
+         Inspect Payload
+                  |
+                  v
+        Correlate Source/Dest
+                  |
+                  v
+        Investigate Process
+                  |
+                  v
+          Determine Context
+```
+
+The purpose is to move from:
+
+> "There is ICMP traffic."
+
+to:
+
+> "Why is this host generating this particular ICMP traffic pattern?"
+
+---
+
+# Project Structure
+
+The current repository contains:
+
+```text
+ICMP-Tunnel-Lab/
+│
+├── Receiver.py
+├── sender.py
+├── launcher.ps1
+├── start_lab.bat
+└── README.md
+```
+
+The receiver creates the following directory when a transfer is successfully reconstructed:
+
+```text
+received/
+```
+
+and stores reconstructed files using:
+
+```text
+received/recv_<filename>
+```
+
+The current repository structure and filenames are visible in the GitHub repository.
+
+---
+
+# Components
+
+## `sender.py`
+
+Responsible for:
+
+```text
+Read file
+   ↓
+Base64 encode
+   ↓
+Split into chunks
+   ↓
+Create ICMP Echo Requests
+   ↓
+Send packets
+```
+
+---
+
+## `Receiver.py`
+
+Responsible for:
+
+```text
+Capture ICMP packets
+   ↓
+Identify laboratory packets
+   ↓
+Extract session information
+   ↓
+Collect chunks
+   ↓
+Reconstruct Base64
+   ↓
+Decode data
+   ↓
+Write file
+```
+
+---
+
+## `launcher.ps1`
+
+Responsible for the Windows setup and execution workflow:
+
+```text
+Check Python
+     ↓
+Check Npcap
+     ↓
+Check Scapy
+     ↓
+Check Lab Files
+     ↓
+Launch Receiver
+     ↓
+Launch Sender
+```
+
+---
+
+## `start_lab.bat`
+
+A simple Windows entry point that launches:
+
+```text
+launcher.ps1
+```
+
+with PowerShell's execution-policy bypass.
+
+---
+
+# One-Command Setup
+
+If you have already reviewed and trust the repository, you can download the project and launch it using PowerShell.
+
+Run PowerShell as Administrator:
+
+```powershell
+$u="https://github.com/mohammad-darvish-pixel/ICMP-Tunnel-Lab/archive/refs/heads/main.zip";$d="$env:TEMP\icmp-tunnel-lab";Remove-Item $d -Recurse -Force -ErrorAction SilentlyContinue;New-Item -ItemType Directory $d|Out-Null;Invoke-WebRequest $u -OutFile "$d\lab.zip";Expand-Archive "$d\lab.zip" $d -Force;$p=Get-ChildItem $d -Directory|Select-Object -First 1;Set-Location $p.FullName;powershell -ExecutionPolicy Bypass -File .\launcher.ps1
+```
+
+### Security Warning
+
+This command:
+
+1. Downloads code from GitHub.
+2. Extracts the repository.
+3. Executes `launcher.ps1`.
+4. May perform installation/setup operations.
+5. Requires elevated privileges for the laboratory.
+
+Therefore, **review the repository before using the one-line command**, especially when running it with Administrator privileges.
+
+Repository:
+
+https://github.com/mohammad-darvish-pixel/ICMP-Tunnel-Lab
+
+---
+
+# Recommended Laboratory Scenario
+
+For a simple demonstration:
+
+### Step 1 — Start Wireshark
+
+Select the Npcap loopback capture interface.
+
+### Step 2 — Start the Receiver
+
+```powershell
+python Receiver.py
+```
+
+### Step 3 — Create Synthetic Data
+
+For example:
+
+```text
+LAB_SECRET
+TRAINING_DATA
+THIS_IS_A_TEST
+```
+
+Save it as:
+
+```text
+secret.txt
+```
+
+### Step 4 — Start the Sender
+
+```powershell
+python sender.py
+```
+
+Use:
+
+```text
+127.0.0.1
+```
+
+as the target.
+
+### Step 5 — Observe the Packets
+
+Use:
+
+```text
+icmp
+```
+
+in Wireshark.
+
+### Step 6 — Isolate the Lab Traffic
+
+Use:
+
+```text
+icmp[4:2] == 0x4c42
+```
+
+### Step 7 — Inspect the Payload
+
+Look for:
+
+```text
+ICMTUN
+```
+
+and examine:
+
+```text
+Session ID
+Sequence
+Total Chunks
+Filename
+Base64 Data
+```
+
+### Step 8 — Check the Receiver
+
+After all chunks are received, the reconstructed file should appear under:
+
+```text
+received/
+```
 
 ---
 
 # Learning Objectives
 
-This laboratory can be used to understand:
+This laboratory provides hands-on practice with:
 
-* How ICMP works
 * ICMP Echo Request / Echo Reply
+* ICMP packet structure
 * ICMP payloads
 * Raw packet generation
+* Scapy
+* Npcap
+* Windows packet capture
 * ICMP tunneling concepts
 * Simulated data exfiltration
-* Packet capture
-* Wireshark analysis
-* Network traffic baselining
-* Detection indicators for suspicious ICMP traffic
+* Base64 encoding
+* Chunk-based data transfer
+* Packet reconstruction
+* Wireshark filtering
+* Network traffic analysis
+* ICMP traffic baselining
+* Detection engineering concepts
+* Blue-team investigation techniques
+
+---
+
+# Limitations
+
+This project is intentionally simplified for laboratory use.
+
+It should not be considered a production-grade tunneling implementation.
+
+For example, the laboratory does not attempt to reproduce all the characteristics of a real-world covert channel.
+
+Its purpose is to make the underlying packet behavior visible and easy to investigate.
+
+The small chunk size, recognizable header, fixed ICMP identifier, and regular transmission interval are intentionally useful for training and packet analysis.
+
+---
+
+# Security Notice
+
+Use this project only on systems and networks that you own or are explicitly authorized to test.
+
+Do **not** use it to:
+
+* Exfiltrate real confidential information
+* Transfer credentials
+* Bypass security controls
+* Establish unauthorized tunnels
+* Evade network monitoring
+* Access systems without permission
+* Conduct unauthorized security testing
+
+Use synthetic laboratory data instead:
+
+```text
+LAB_SECRET
+TRAINING_DATA
+TEST_FILE
+```
 
 ---
 
 # Disclaimer
 
-This project is intended for authorized security research, experimentation, and defensive network analysis.
+This project is provided for authorized security research, experimentation, and defensive network analysis.
 
-The author is not responsible for misuse of this project or any damage resulting from unauthorized use.
+The author is not responsible for misuse of the project or for damage resulting from unauthorized use.
+
+---
+
+## Repository
+
+**ICMP-Tunnel-Lab**
+
+https://github.com/mohammad-darvish-pixel/ICMP-Tunnel-Lab
