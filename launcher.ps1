@@ -170,7 +170,7 @@ function Test-NpcapInstalled {
 
 
 # ============================================================================
-# CHECK SCAPY
+# CHECK / INSTALL SCAPY
 # ============================================================================
 
 function Test-ScapyInstalled {
@@ -179,20 +179,60 @@ function Test-ScapyInstalled {
         [string]$PyExe
     )
 
+    Write-Host "[*] Checking Scapy installation..." -ForegroundColor Cyan
+
     try {
 
-        $Result = & $PyExe -c "import scapy; print('SCAPY_OK')" 2>&1
+        # Check if Scapy is installed
+        & $PyExe -c "import scapy; print('SCAPY_OK')" 2>$null
 
-        return ($Result -match "SCAPY_OK")
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "[+] Scapy is already installed." -ForegroundColor Green
+            return $true
+        }
 
     }
     catch {
+        # Continue to installation
+    }
 
+    Write-Host "[!] Scapy is not installed." -ForegroundColor Yellow
+    Write-Host "[*] Installing Scapy..." -ForegroundColor Cyan
+
+    try {
+
+        # Upgrade pip first
+        & $PyExe -m pip install --upgrade pip
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[-] Failed to upgrade pip." -ForegroundColor Red
+            return $false
+        }
+
+        # Install Scapy
+        & $PyExe -m pip install scapy
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[-] Failed to install Scapy." -ForegroundColor Red
+            return $false
+        }
+
+        # Verify installation
+        & $PyExe -c "import scapy; print('SCAPY_OK')" 2>$null
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "[+] Scapy installed successfully." -ForegroundColor Green
+            return $true
+        }
+
+        Write-Host "[-] Scapy installation verification failed." -ForegroundColor Red
+        return $false
+    }
+    catch {
+        Write-Host "[-] Error while installing Scapy: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
 }
-
-
 # ============================================================================
 # DOWNLOAD FILE WITH PROGRESS
 # ============================================================================
