@@ -14,8 +14,7 @@
 
 > **Run PowerShell as Administrator before executing the command below.**
 
-```$u="https://github.com/mohammad-darvish-pixel/ICMP-Tunnel-Lab/archive/refs/heads/main.zip";$d="$env:USERPROFILE\Desktop\icmp-tunnel-lab";Remove-Item $d -Recurse -Force -ErrorAction SilentlyContinue;New-Item $d -ItemType Directory -Force|Out-Null;Invoke-WebRequest $u -OutFile "$d\lab.zip";Expand-Archive "$d\lab.zip" $d -Force;Remove-Item "$d\lab.zip" -Force;$p=Get-ChildItem $d -Directory|Select-Object -First 1;Set-Location $p.FullName;& powershell -ExecutionPolicy Bypass -File ".\launcher.ps1"
-```
+```$u="https://github.com/mohammad-darvish-pixel/ICMP-Tunnel-Lab/archive/refs/heads/main.zip";$d="$env:USERPROFILE\Desktop\icmp-tunnel-lab";Remove-Item $d -Recurse -Force -ErrorAction SilentlyContinue;New-Item $d -ItemType Directory -Force|Out-Null;Invoke-WebRequest $u -OutFile "$d\lab.zip";Expand-Archive "$d\lab.zip" $d -Force;Remove-Item "$d\lab.zip" -Force;$p=Get-ChildItem $d -Directory|Select-Object -First 1;Set-Location $p.FullName;& powershell -ExecutionPolicy Bypass -File ".\launcher.ps1"```
 
 ### ⚠️ Security Warning
 
